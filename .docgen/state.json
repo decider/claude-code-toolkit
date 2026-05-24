@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "lastRun": "2026-05-24T17:33:13.916Z",
+  "directories": {
+    "docgen/hooks": {
+      "lastAnalyzed": "2026-05-24T17:32:46.830Z",
+      "reason": "forced",
+      "version": "0.1.0",
+      "files": {
+        "pre-push": 1779643949222
+      },
+      "childVersionsAtAnalysis": {},
+      "curatedContextAtAnalysis": {}
+    },
+    "docs": {
+      "lastAnalyzed": "2026-05-24T17:33:04.793Z",
+      "reason": "forced",
+      "version": "0.1.0",
+      "files": {
+        "SAFETY.md": 1779643949224
+      },
+      "childVersionsAtAnalysis": {},
+      "curatedContextAtAnalysis": {}
+    },
+    "secret-scrub": {
+      "lastAnalyzed": "2026-05-24T17:33:13.916Z",
+      "reason": "forced",
+      "version": "0.1.0",
+      "files": {
+        "detect.py": 1779643949226,
+        "install-launchd-trees.sh": 1779643949226,
+        "install-launchd.sh": 1779643949227,
+        "install-systemd-trees.sh": 1779643949227,
+        "install-systemd.sh": 1779643949227,
+        "install.sh": 1779643949227,
+        "scrub-working-trees-runner.sh": 1779643949227,
+        "scrub.py": 1779643949228,
+        "test_detect.py": 1779643949228,
+        "test_install.py": 1779643949228,
+        "test_scrub.py": 1779643949228
+      },
+      "childVersionsAtAnalysis": {
+        "secret-scrub/githooks": "0.1.0"
+      },
+      "curatedContextAtAnalysis": {}
+    },
+    "secret-scrub/githooks": {
+      "lastAnalyzed": "2026-05-24T17:32:45.309Z",
+      "reason": "forced",
+      "version": "0.1.0",
+      "files": {
+        "pre-commit": 1779643949226
+      },
+      "childVersionsAtAnalysis": {},
+      "curatedContextAtAnalysis": {}
+    }
+  }
+}

@@ -179,14 +179,27 @@ export function saveState(root, state) {
  * don't clobber each other.
  */
 let _saveChain = Promise.resolve();
+/** Reset the serialise-writes chain to a clean resolved state. Called
+ *  at the top of each top-level run so a chain left pending/poisoned by
+ *  a prior run can't stall the next one's first save. */
+export function resetSaveChain() { _saveChain = Promise.resolve(); }
 export function saveStateMerging(root, additions, lastRun) {
-  _saveChain = _saveChain.then(() => {
+  const apply = () => {
     const state = loadState(root);
     if (lastRun) state.lastRun = lastRun;
     Object.assign(state.directories, additions);
     saveState(root, state);
-  });
-  return _saveChain;
+  };
+  // Serialise writes by chaining, but run `apply` whether the previous
+  // link resolved OR rejected (`.then(apply, apply)`) so a single
+  // failed save can't poison the chain for every future call. The
+  // stored chain is also `.catch`-swallowed so it never stays in a
+  // rejected state — without this, one thrown save (e.g. a temp root
+  // deleted mid-run, as happens between isolated tests) would make
+  // every subsequent `await saveStateMerging` reject or stall.
+  const result = _saveChain.then(apply, apply);
+  _saveChain = result.catch(() => {});
+  return result;
 }
 
 // ─── directory walking ────────────────────────────────────────────────────
@@ -997,6 +1010,13 @@ export async function analyzeAllParallel(root, opts = {}) {
     onBatchStart,
     ...analyzeOpts
   } = opts;
+
+  // Reset the module-global save-chain at the start of every top-level
+  // run. Without this, a chain left in a pending/poisoned state by a
+  // prior run (or a prior test in the same process) would make the
+  // first saveStateMerging here await a `.then` that never fires —
+  // a silent hang. A fresh run owns a fresh chain.
+  resetSaveChain();
 
   let done = 0;
   let skipped = 0;

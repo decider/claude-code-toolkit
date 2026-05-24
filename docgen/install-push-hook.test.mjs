@@ -1,5 +1,5 @@
 /**
- * Tests for tools/docgen/install-push-hook.sh.
+ * Tests for docgen/install-push-hook.sh.
  *
  * Coverage:
  *   1. Vanilla install in a fresh repo → .git/hooks/pre-push
@@ -17,7 +17,7 @@
  *
  * Each test uses a fresh `mkdtemp` repo so we never touch the user's
  * real ~/.config / ~/.git-hooks state. Run:
- *   npx tsx --test tools/docgen/install-push-hook.test.mjs
+ *   npx tsx --test docgen/install-push-hook.test.mjs
  *   (or `node --test` since this is pure ESM/JS)
  */
 import test from 'node:test';
@@ -30,7 +30,9 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INSTALLER = resolve(__dirname, 'install-push-hook.sh');
-const REPO_ROOT = resolve(__dirname, '..', '..');
+// Source the installer + hook from THIS directory (layout-agnostic:
+// works whether docgen lives at repo root or vendored under tools/).
+const SRC_DIR = __dirname;
 
 // Isolate every test from the developer's machine-global git config —
 // specifically `core.hooksPath`, which on the maintainer's box points
@@ -51,14 +53,14 @@ function freshRepo() {
   writeFileSync(join(dir, 'README.md'), '');
   execFileSync('git', ['add', '.'], { cwd: dir, env: ISOLATED_ENV });
   execFileSync('git', ['commit', '--quiet', '-m', 'init'], { cwd: dir, env: ISOLATED_ENV });
-  // Mirror tools/docgen into the test repo so the installer can find
-  // its SOURCE hook + invoking install-push-hook.sh resolves SCRIPT_DIR.
-  mkdirSync(join(dir, 'tools', 'docgen', 'hooks'), { recursive: true });
+  // Mirror docgen into the test repo so the installer can find its
+  // SOURCE hook + invoking install-push-hook.sh resolves SCRIPT_DIR.
+  mkdirSync(join(dir, 'docgen', 'hooks'), { recursive: true });
   // Copy just the bits the installer needs (the hook source + itself).
   for (const f of ['install-push-hook.sh', 'hooks/pre-push']) {
-    const src = join(REPO_ROOT, 'tools', 'docgen', f);
+    const src = join(SRC_DIR, f);
     if (existsSync(src)) {
-      const dst = join(dir, 'tools', 'docgen', f);
+      const dst = join(dir, 'docgen', f);
       writeFileSync(dst, readFileSync(src));
       chmodSync(dst, 0o755);
     }
@@ -67,7 +69,7 @@ function freshRepo() {
 }
 
 function run(repo, args = []) {
-  return spawnSync('bash', [join(repo, 'tools', 'docgen', 'install-push-hook.sh'), ...args, '--here'], {
+  return spawnSync('bash', [join(repo, 'docgen', 'install-push-hook.sh'), ...args, '--here'], {
     cwd: repo, encoding: 'utf8', env: ISOLATED_ENV,
   });
 }
