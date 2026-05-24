@@ -1,0 +1,11 @@
+# Sensitive repos — operations against these must ONLY be performed
+# under a bot/service account, NEVER your personal identity. A push,
+# merge, PR, or release that lands under your personal account on one
+# of these would attach your name to it permanently.
+#
+# Format: one egrep-style regex per line. # = comment.
+# Match against the "owner/repo" portion of the remote URL.
+#
+# Examples (replace with your own):
+your-org/your-private-repo
+your-org/another-private-repo

@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# DOCGEN_PRE_PUSH_HOOK_v1 — leave this marker so install-push-hook.sh can
+# detect this file as ours and refuse to overwrite anyone else's hook.
+#
+# tools/docgen/hooks/pre-push — refresh docgen READMEs in the background
+# after every push.
+#
+# Fires before each `git push`. Spawns a detached background process
+# that waits a few seconds (so the user's actual push completes), then:
+#
+#   1. runs `tools/docgen/docgen --until-done --parallel 4`
+#   2. if any README.md files changed, commits them locally
+#   3. pushes the doc-refresh commit back to the same branch (with
+#      DOCGEN_HOOK_SKIP=1 so this same hook doesn't loop)
+#   4. if the push fails because the branch is gone server-side (PR
+#      already merged + branch deleted), opens a NEW follow-up PR via
+#      `gh pr create` with just the doc updates
+#
+# The hook itself exits 0 immediately so it NEVER blocks the user's
+# push. Failures during the background work go to /tmp/docgen-push-
+# hook.log; the user-facing push is unaffected.
+#
+# Loop prevention: the background process sets DOCGEN_HOOK_SKIP=1
+# before its own push. This hook checks that env var at the top and
+# noops if set, so the doc-refresh push doesn't trigger another
+# doc-refresh.
+#
+# Install: tools/docgen/install-push-hook.sh
+
+set -euo pipefail
+
+# ─── loop guard ──────────────────────────────────────────────────────────
+# Docgen-driven pushes set DOCGEN_HOOK_SKIP=1 so this hook noops on
+# them; only USER pushes should trigger a refresh.
+if [ "${DOCGEN_HOOK_SKIP:-0}" = "1" ]; then
+  exit 0
+fi
+
+# ─── env / paths ─────────────────────────────────────────────────────────
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+[ -n "$ROOT" ] || exit 0  # not in a git repo somehow → bail silently
+
+# Pre-push gets remote+url as positional args.
+REMOTE="${1:-origin}"
+URL="${2:-}"
+LOG="/tmp/docgen-push-hook.log"
+
+# Drain stdin (refs being pushed). We don't currently use the refs but
+# pre-push hooks block until stdin is consumed — silently discard.
+cat > /dev/null || true
+
+# ─── fork a detached refresh runner ──────────────────────────────────────
+# Run the actual work in a subshell, redirected fully off, so the user's
+# foreground push isn't blocked. We use `setsid` if available to fully
+# detach from the controlling terminal; otherwise nohup + `&`.
+
+run_in_background() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -f "$@" >> "$LOG" 2>&1 < /dev/null
+  else
+    nohup "$@" >> "$LOG" 2>&1 < /dev/null &
+    disown 2>/dev/null || true
+  fi
+}
+
+# Self-call with REFRESH_NOW=1 so the same script does the background
+# work without needing a second file.
+if [ "${DOCGEN_HOOK_REFRESH_NOW:-0}" != "1" ]; then
+  DOCGEN_HOOK_REFRESH_NOW=1 DOCGEN_HOOK_REMOTE="$REMOTE" \
+    run_in_background "$0"
+  exit 0
+fi
+
+# ─── from here on: we are the detached background worker ─────────────────
+
+cd "$ROOT"
+
+{
+  echo "─── $(date -u +%FT%TZ) docgen-push-hook starting ───"
+  echo "remote=${DOCGEN_HOOK_REMOTE:-origin}"
+
+  # Wait for the user's push to settle. 5s is conservative; tweak if a
+  # large push regularly takes longer.
+  sleep 5
+
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
+    echo "no current branch (detached HEAD?); skipping"
+    exit 0
+  fi
+  echo "branch=$branch"
+
+  # Run docgen. It may take a few minutes on a cold cache; that's fine
+  # — we're detached.
+  if ! "$ROOT/tools/docgen/docgen" --until-done --parallel 4; then
+    echo "docgen failed (see above)"
+    exit 0
+  fi
+
+  if [ -z "$(git status --porcelain)" ]; then
+    echo "no doc changes — nothing to push"
+    exit 0
+  fi
+
+  # Stage + commit only README + state changes — defensive against
+  # accidentally sweeping in unrelated working-tree changes.
+  git add -A '*README.md' '.docgen/state.json' 2>/dev/null || true
+  if [ -z "$(git diff --cached --name-only)" ]; then
+    echo "no README/.docgen changes after add — nothing to commit"
+    exit 0
+  fi
+  git commit -m "docs: refresh docgen READMEs (auto from pre-push hook)" \
+    --no-verify || { echo "commit failed"; exit 0; }
+
+  # First-try push back to the same branch on the same remote the user
+  # was pushing to. The DOCGEN_HOOK_SKIP=1 env makes the next pre-push
+  # invocation noop (loop guard above).
+  if DOCGEN_HOOK_SKIP=1 git push "${DOCGEN_HOOK_REMOTE:-origin}" "HEAD:$branch" 2>&1; then
+    echo "pushed doc refresh to $branch on ${DOCGEN_HOOK_REMOTE:-origin}"
+    exit 0
+  fi
+
+  echo "direct push failed — branch may have been merged + deleted. Opening follow-up PR."
+
+  # Open a fresh PR with just the doc-refresh commit. We branch off
+  # main (the most likely upstream now that the original branch is
+  # gone) and push there.
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "gh CLI not installed; cannot open follow-up PR. Doc commit remains local."
+    exit 0
+  fi
+
+  new_branch="docgen/refresh-$(date -u +%Y%m%dT%H%M%S)"
+  DOCGEN_HOOK_SKIP=1 git checkout -b "$new_branch"
+  if ! DOCGEN_HOOK_SKIP=1 git push -u "${DOCGEN_HOOK_REMOTE:-origin}" "$new_branch" 2>&1; then
+    echo "follow-up branch push failed"
+    exit 0
+  fi
+  gh pr create \
+    --base main \
+    --title "docs: refresh docgen READMEs (auto)" \
+    --body "Auto-generated follow-up: the branch this was meant for has been merged. Opening a fresh PR with just the README refresh." \
+    2>&1 || echo "gh pr create failed"
+  echo "follow-up PR opened on $new_branch"
+} >> "$LOG" 2>&1

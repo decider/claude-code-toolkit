@@ -1,0 +1,9 @@
+# Personal repos — operations against these must ONLY be performed
+# under your PERSONAL account, NEVER a bot/service account. The
+# mirror-image of sensitive-repos.txt: keeps bot identities off repos
+# that should carry your own name.
+#
+# Format: one egrep-style regex per line. # = comment.
+#
+# Examples (replace with your own):
+your-username/your-personal-repo
