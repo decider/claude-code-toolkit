@@ -34,4 +34,17 @@ if [ "${#paths[@]}" = "0" ]; then
   exit 0
 fi
 
-exec /usr/bin/env python3 "$SCRUB_PY" --working-trees "${paths[@]}"
+# Pass 1 — working-tree files (uncommitted/untracked). Redacts in place.
+/usr/bin/env python3 "$SCRUB_PY" --working-trees "${paths[@]}"
+
+# Pass 2 — .git/config embedded credentials (the fourth leak pathway).
+# DETECT-ONLY here: auto-stripping a token from a background job would
+# silently change git's auth behavior (URL → tokenless → credential
+# helper), which could surprise the user mid-work. So we only REPORT;
+# findings land in this job's log and the operator runs
+# `scrub.py --git-configs <path> --fix` deliberately. A non-zero exit
+# (rc=1 = "credential found") must NOT mark the whole cron job failed —
+# the report in the log is the signal.
+/usr/bin/env python3 "$SCRUB_PY" --git-configs "${paths[@]}" || true
+
+exit 0
