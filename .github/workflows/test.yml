@@ -1,0 +1,52 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  secret-scrub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.9' }
+      - name: Install pytest
+        run: pip install pytest
+      - name: secret-scrub test suite
+        working-directory: secret-scrub
+        run: python -m pytest test_detect.py test_scrub.py test_install.py -q
+
+  docgen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '22' }
+      - name: docgen test suite
+        working-directory: docgen
+        run: node --test --test-timeout=120000 docgen.test.mjs inject-readme-context.test.mjs install-push-hook.test.mjs
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck the installers + guard
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          # -S warning: report warnings + errors, not style nits. Hooks
+          # use dynamic sourcing + word-splitting on purpose; don't fail
+          # the build on those known-intentional patterns.
+          shellcheck -S error \
+            install.sh \
+            secret-scrub/install.sh \
+            secret-scrub/install-launchd.sh \
+            secret-scrub/install-launchd-trees.sh \
+            secret-scrub/install-systemd.sh \
+            secret-scrub/install-systemd-trees.sh \
+            secret-scrub/scrub-working-trees-runner.sh \
+            identity-guard/install.sh \
+            identity-guard/sensitive-guard.sh \
+            docgen/docgen \
+            docgen/install-push-hook.sh
